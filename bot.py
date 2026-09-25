@@ -1,35 +1,54 @@
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
+from config import TOKEN
+from logic import TextAnalysis
 
-from config import token
-from logic import *
+bot = telebot.TeleBot(TOKEN)
 
-bot = telebot.TeleBot(token)
 
-def gen_markup_for_text():
-        markup = InlineKeyboardMarkup()
-        markup.row_width = 1
-        markup.add(InlineKeyboardButton('Получить ответ', callback_data='text_ans'),
-                   InlineKeyboardButton('Перевести сообщение', callback_data='text_translate'))
-
-        return markup
+def build_text_action_keyboard() -> InlineKeyboardMarkup:
+    """Generates inline action buttons for text processing options."""
+    markup = InlineKeyboardMarkup()
+    markup.row_width = 1
+    markup.add(
+        InlineKeyboardButton('Get Assistant Response', callback_data='text_ans'),
+        InlineKeyboardButton('Translate Message', callback_data='text_translate')
+    )
+    return markup
 
 
 @bot.callback_query_handler(func=lambda call: True)
-def callback_query(call):
+def handle_callback_query(call):
+    """Handles inline keyboard button clicks for translation and response actions."""
     if "text" in call.data:
-        obj = TextAnalysis.memory[call.from_user.username][-1]
-        if call.data == "text_ans":
-            bot.send_message(call.message.chat.id, obj.response)
-        elif call.data == "text_translate":
-            bot.send_message(call.message.chat.id,  obj.translation)
+        user_history = TextAnalysis.memory.get(call.from_user.username)
+        
+        if user_history:
+            latest_analysis = user_history[-1]
+            if call.data == "text_ans":
+                bot.send_message(call.message.chat.id, latest_analysis.response)
+            elif call.data == "text_translate":
+                bot.send_message(call.message.chat.id, f"Translation:\n{latest_analysis.translation}")
+        else:
+            bot.send_message(call.message.chat.id, "No active text session found.")
 
 
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
-    # Дополнительное задание
+    """Processes incoming text messages and presents action choices."""
     bot.send_chat_action(message.chat.id, 'typing')
-    TextAnalysis(message.text, message.from_user.username)
-    bot.send_message(message.chat.id, "Я получил твое сообщение! Что ты хочешь с ним сделать?", reply_markup=gen_markup_for_text())
+    
+    # Store analysis in memory
+    username = message.from_user.username or str(message.from_user.id)
+    TextAnalysis(message.text, username)
+    
+    response_text = "I received your message! Choose an action below:"
+    bot.send_message(
+        message.chat.id, 
+        response_text, 
+        reply_markup=build_text_action_keyboard()
+    )
 
-bot.infinity_polling(none_stop=True)
+
+if __name__ == "__main__":
+    bot.infinity_polling(none_stop=True)
